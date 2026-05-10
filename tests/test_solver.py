@@ -13,7 +13,8 @@ class SolverTest(unittest.TestCase):
 
     def test_solver_reports_loss_on_terminal_position(self):
         state = State.from_sfen(".l./.C./.../.L. b - -")
-        terminal = state.apply_move(result_move := solve(state, max_depth=1).best_move)
+        result_move = solve(state, max_depth=1).best_move
+        terminal = state.apply_move(result_move)
         self.assertIsNotNone(result_move)
         result = solve(terminal, max_depth=2)
         self.assertEqual(result.value, -1)

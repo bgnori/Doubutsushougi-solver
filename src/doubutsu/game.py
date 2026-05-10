@@ -320,6 +320,7 @@ class State:
                 if target.type == PieceType.LION:
                     nxt.winner = player
                 else:
+                    # Captured hens return to hand as unpromoted chicks in doubutsushougi.
                     captured_type = PieceType.CHICK if target.type == PieceType.HEN else target.type
                     if captured_type in HAND_TYPES:
                         nxt.hands[player][captured_type] += 1

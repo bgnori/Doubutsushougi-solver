@@ -70,6 +70,7 @@ def solve(state: State, max_depth: int = 8) -> SolveResult:
 
 
 def evaluation_to_text(value: int, turn: Player) -> str:
+    # At finite depth, 0 means either true draw or unresolved/unknown result.
     if value > 0:
         return f"{turn.value}:win"
     if value < 0:
