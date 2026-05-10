@@ -1,5 +1,6 @@
 import unittest
 from collections import defaultdict
+from math import comb
 
 from src.doubutsu.game import BOARD_COLS, BOARD_ROWS, Move, Piece, PieceType, Player, State
 from src.doubutsu.hash import position_key, position_key_space_size, state_from_key
@@ -96,6 +97,29 @@ class HashTest(unittest.TestCase):
         for key in keys:
             with self.subTest(key=key):
                 self.assertEqual(key, position_key(state_from_key(key)))
+
+    def test_position_key_space_size_matches_hand_count_formula(self):
+        per_lion = 0
+        for h_g in range(3):
+            for h_e in range(3):
+                for h_c in range(3):
+                    b_g = 2 - h_g
+                    b_e = 2 - h_e
+                    b_c = 2 - h_c
+                    per_lion += (
+                        comb(10, b_g)
+                        * comb(10 - b_g, b_e)
+                        * comb(10 - b_g - b_e, b_c)
+                        * (h_g + 1)
+                        * (2 ** b_g)
+                        * (h_e + 1)
+                        * (2 ** b_e)
+                        * (h_c + 1)
+                        * (4 ** b_c)
+                    )
+
+        self.assertEqual(11_878_227, per_lion)
+        self.assertEqual(2 * 12 * 11 * per_lion, position_key_space_size())
 
 
 if __name__ == "__main__":
