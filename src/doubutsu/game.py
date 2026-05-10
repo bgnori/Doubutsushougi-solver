@@ -132,20 +132,18 @@ class State:
             Player.BLACK: cls.empty_hand(),
             Player.WHITE: cls.empty_hand(),
         }
-        for ch in black_hand:
-            if black_hand == "-":
-                break
-            pt = PieceType(ch.upper())
-            if pt not in HAND_TYPES:
-                raise ValueError("Only C/G/E are allowed in hand")
-            hands[Player.BLACK][pt] += 1
-        for ch in white_hand:
-            if white_hand == "-":
-                break
-            pt = PieceType(ch.upper())
-            if pt not in HAND_TYPES:
-                raise ValueError("Only C/G/E are allowed in hand")
-            hands[Player.WHITE][pt] += 1
+        if black_hand != "-":
+            for ch in black_hand:
+                pt = PieceType(ch.upper())
+                if pt not in HAND_TYPES:
+                    raise ValueError("Only C/G/E are allowed in hand")
+                hands[Player.BLACK][pt] += 1
+        if white_hand != "-":
+            for ch in white_hand:
+                pt = PieceType(ch.upper())
+                if pt not in HAND_TYPES:
+                    raise ValueError("Only C/G/E are allowed in hand")
+                hands[Player.WHITE][pt] += 1
 
         return cls(board=board, turn=turn, hands=hands)
 
@@ -221,11 +219,13 @@ class State:
                     continue
                 for dr, dc in self._deltas_for_piece(p):
                     nr, nc = r + dr, c + dc
+                    if not self.inside(nr, nc):
+                        continue
+                    target = self.board[nr][nc]
+                    if target is not None and target.owner == attacker:
+                        continue
                     if nr == row and nc == col:
-                        if self.inside(nr, nc):
-                            target = self.board[nr][nc]
-                            if target is None or target.owner == defender:
-                                return True
+                        return True
         return False
 
     def _find_lion(self, owner: Player) -> Optional[Tuple[int, int]]:
@@ -268,8 +268,40 @@ class State:
                     moves.append(Move(to_row=r, to_col=c, drop_piece=pt))
         return moves
 
+    def is_legal_move(self, move: Move) -> bool:
+        if self.winner is not None:
+            return False
+        if not self.inside(move.to_row, move.to_col):
+            return False
+
+        if move.is_drop:
+            if move.drop_piece is None or move.drop_piece not in HAND_TYPES:
+                return False
+            if self.hands[self.turn][move.drop_piece] <= 0:
+                return False
+            if self.board[move.to_row][move.to_col] is not None:
+                return False
+            if move.drop_piece == PieceType.CHICK and move.to_row == self._last_rank(self.turn):
+                return False
+            return True
+
+        if move.from_row is None or move.from_col is None:
+            return False
+        if not self.inside(move.from_row, move.from_col):
+            return False
+        piece = self.board[move.from_row][move.from_col]
+        if piece is None or piece.owner != self.turn:
+            return False
+        target = self.board[move.to_row][move.to_col]
+        if target is not None and target.owner == self.turn:
+            return False
+
+        dr = move.to_row - move.from_row
+        dc = move.to_col - move.from_col
+        return (dr, dc) in self._deltas_for_piece(piece)
+
     def apply_move(self, move: Move) -> "State":
-        if move not in self.legal_moves():
+        if not self.is_legal_move(move):
             raise ValueError(f"Illegal move: {move}")
 
         nxt = self.clone()
