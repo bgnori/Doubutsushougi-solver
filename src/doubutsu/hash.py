@@ -1,96 +1,259 @@
-"""Perfect hash for Doubutsushougi positions.
-
-Each valid position is encoded as a 61-bit integer with no collisions:
-
-  bits  0-47 : board  (12 cells × 4 bits, piece code 0-10)
-  bits 48-59 : hands  (6 × 2 bits: BHG, WHG, BHE, WHE, BHC, WHC)
-  bit  60    : turn   (0 = Black, 1 = White)
-
-The encoding is injective over all valid positions.
-"""
 from __future__ import annotations
 
-from typing import Optional
+from functools import lru_cache
+from typing import Dict, List, Optional, Tuple
 
-from .game import (
-    BOARD_COLS,
-    BOARD_ROWS,
-    HAND_TYPES,
-    Piece,
-    PieceType,
-    Player,
-    State,
-)
+from .game import BOARD_COLS, BOARD_ROWS, PieceType, Player, State
 
-# Piece → 4-bit code (0 = empty)
-_PIECE_TO_CODE = {
-    (Player.BLACK, PieceType.LION): 1,
-    (Player.WHITE, PieceType.LION): 2,
-    (Player.BLACK, PieceType.GIRAFFE): 3,
-    (Player.WHITE, PieceType.GIRAFFE): 4,
-    (Player.BLACK, PieceType.ELEPHANT): 5,
-    (Player.WHITE, PieceType.ELEPHANT): 6,
-    (Player.BLACK, PieceType.CHICK): 7,
-    (Player.WHITE, PieceType.CHICK): 8,
-    (Player.BLACK, PieceType.HEN): 9,
-    (Player.WHITE, PieceType.HEN): 10,
+_NONE_WINNER = 0
+_BLACK_WINNER = 1
+_WHITE_WINNER = 2
+_WINNER_CODES = {
+    None: _NONE_WINNER,
+    Player.BLACK: _BLACK_WINNER,
+    Player.WHITE: _WHITE_WINNER,
 }
 
-# 4-bit code → Piece (0 = empty)
-_CODE_TO_PIECE = {v: Piece(k[0], k[1]) for k, v in _PIECE_TO_CODE.items()}
+_BLACK_HAND = -2
+_WHITE_HAND = -1
+
+_BLACK_CHICK_OFFSET = 0
+_WHITE_CHICK_OFFSET = 12
+_BLACK_HEN_OFFSET = 24
+_WHITE_HEN_OFFSET = 36
+
+_BOARD_SIZE = BOARD_ROWS * BOARD_COLS
+_ABSENT_LION = _BOARD_SIZE
+_PAIR_TABLE_CACHE_SIZE = 512
 
 
-def position_to_index(state: State) -> int:
-    """Return a unique 61-bit integer for *state*."""
-    board_enc = 0
-    for r in range(BOARD_ROWS):
-        for c in range(BOARD_COLS):
-            sq = r * BOARD_COLS + c
-            piece = state.board[r][c]
-            code = _PIECE_TO_CODE.get((piece.owner, piece.type), 0) if piece else 0
-            board_enc |= code << (4 * sq)
+def position_key(state: State) -> int:
+    key = _winner_code(state.winner)
+    key = key * 2 + (0 if state.turn == Player.BLACK else 1)
 
-    h = state.hands
-    hand_enc = (
-        (h[Player.BLACK][PieceType.GIRAFFE])
-        | (h[Player.WHITE][PieceType.GIRAFFE] << 2)
-        | (h[Player.BLACK][PieceType.ELEPHANT] << 4)
-        | (h[Player.WHITE][PieceType.ELEPHANT] << 6)
-        | (h[Player.BLACK][PieceType.CHICK] << 8)
-        | (h[Player.WHITE][PieceType.CHICK] << 10)
+    black_lion, white_lion = _lion_positions(state)
+    black_lion_code = _ABSENT_LION if black_lion is None else black_lion
+    white_lion_code = _ABSENT_LION if white_lion is None else white_lion
+
+    key = key * (_ABSENT_LION + 1) + black_lion_code
+    white_lion_rank, white_lion_total = _rank_second_lion(black_lion_code, white_lion_code)
+    key = key * white_lion_total + white_lion_rank
+
+    occupied_mask = 0
+    if black_lion is not None:
+        occupied_mask |= 1 << black_lion
+    if white_lion is not None:
+        occupied_mask |= 1 << white_lion
+
+    giraffe_rank, giraffe_total, giraffe_mask = _encode_non_promoted_pair(
+        state=state,
+        piece_type=PieceType.GIRAFFE,
+        occupied_mask=occupied_mask,
     )
+    key = key * giraffe_total + giraffe_rank
+    occupied_mask |= giraffe_mask
 
-    turn_enc = 1 if state.turn == Player.WHITE else 0
-    return board_enc | (hand_enc << 48) | (turn_enc << 60)
+    elephant_rank, elephant_total, elephant_mask = _encode_non_promoted_pair(
+        state=state,
+        piece_type=PieceType.ELEPHANT,
+        occupied_mask=occupied_mask,
+    )
+    key = key * elephant_total + elephant_rank
+    occupied_mask |= elephant_mask
+
+    chick_rank, chick_total, _ = _encode_chick_pair(state=state, occupied_mask=occupied_mask)
+    key = key * chick_total + chick_rank
+    return key
 
 
-def index_to_position(idx: int) -> State:
-    """Decode a 61-bit index produced by *position_to_index* back to a State."""
-    turn_enc = (idx >> 60) & 1
-    hand_enc = (idx >> 48) & 0xFFF
-    board_enc = idx & ((1 << 48) - 1)
+def _winner_code(winner: Optional[Player]) -> int:
+    return _WINNER_CODES[winner]
 
-    board = []
-    for r in range(BOARD_ROWS):
-        row = []
-        for c in range(BOARD_COLS):
-            sq = r * BOARD_COLS + c
-            code = (board_enc >> (4 * sq)) & 0xF
-            row.append(_CODE_TO_PIECE.get(code))
-        board.append(row)
 
-    hands = {
-        Player.BLACK: {
-            PieceType.GIRAFFE: hand_enc & 3,
-            PieceType.ELEPHANT: (hand_enc >> 4) & 3,
-            PieceType.CHICK: (hand_enc >> 8) & 3,
-        },
-        Player.WHITE: {
-            PieceType.GIRAFFE: (hand_enc >> 2) & 3,
-            PieceType.ELEPHANT: (hand_enc >> 6) & 3,
-            PieceType.CHICK: (hand_enc >> 10) & 3,
-        },
-    }
+def _cell_index(row: int, col: int) -> int:
+    return row * BOARD_COLS + col
 
-    turn = Player.WHITE if turn_enc else Player.BLACK
-    return State(board=board, turn=turn, hands=hands)
+
+def _lion_positions(state: State) -> Tuple[Optional[int], Optional[int]]:
+    black_lion = None
+    white_lion = None
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            piece = state.board[row][col]
+            if piece is None or piece.type != PieceType.LION:
+                continue
+            index = _cell_index(row, col)
+            if piece.owner == Player.BLACK:
+                black_lion = index
+            else:
+                white_lion = index
+    return black_lion, white_lion
+
+
+def _rank_second_lion(first_lion_code: int, second_lion_code: int) -> Tuple[int, int]:
+    first_lion_occupies_square = first_lion_code != _ABSENT_LION
+    total = (_ABSENT_LION + 1) - (1 if first_lion_occupies_square else 0)
+    rank = 0
+    for candidate in range(_ABSENT_LION + 1):
+        if candidate != _ABSENT_LION and candidate == first_lion_code:
+            continue
+        if candidate == second_lion_code:
+            return rank, total
+        rank += 1
+    raise ValueError(f"Invalid lion placement: black={first_lion_code}, white={second_lion_code}")
+
+
+def _encode_non_promoted_pair(state: State, piece_type: PieceType, occupied_mask: int) -> Tuple[int, int, int]:
+    placements = _non_promoted_pair(state, piece_type)
+    table, total = _non_promoted_pair_table(occupied_mask)
+    rank = table.get(placements)
+    if rank is None:
+        raise ValueError(f"Invalid {piece_type.value} placement")
+    return rank, total, _pair_board_mask(placements)
+
+
+def _encode_chick_pair(state: State, occupied_mask: int) -> Tuple[int, int, int]:
+    placements = _chick_pair(state)
+    table, total = _chick_pair_table(occupied_mask)
+    rank = table.get(placements)
+    if rank is None:
+        raise ValueError("Invalid chick placement")
+    return rank, total, _pair_board_mask(placements)
+
+
+def _non_promoted_pair(state: State, piece_type: PieceType) -> Tuple[int, ...]:
+    placements: List[int] = []
+
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            piece = state.board[row][col]
+            if piece is None or piece.type != piece_type:
+                continue
+            index = _cell_index(row, col)
+            placements.append(index if piece.owner == Player.BLACK else _BOARD_SIZE + index)
+
+    for _ in range(state.hands[Player.BLACK][piece_type]):
+        placements.append(_BLACK_HAND)
+    for _ in range(state.hands[Player.WHITE][piece_type]):
+        placements.append(_WHITE_HAND)
+
+    if len(placements) > 2:
+        raise ValueError(f"Found {len(placements)} {piece_type.value} pieces, expected at most 2")
+    placements.sort()
+    return tuple(placements)
+
+
+def _chick_pair(state: State) -> Tuple[int, ...]:
+    placements: List[int] = []
+
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            piece = state.board[row][col]
+            if piece is None:
+                continue
+            index = _cell_index(row, col)
+            if piece.type == PieceType.CHICK:
+                placements.append(
+                    _BLACK_CHICK_OFFSET + index if piece.owner == Player.BLACK else _WHITE_CHICK_OFFSET + index
+                )
+            elif piece.type == PieceType.HEN:
+                placements.append(_BLACK_HEN_OFFSET + index if piece.owner == Player.BLACK else _WHITE_HEN_OFFSET + index)
+
+    for _ in range(state.hands[Player.BLACK][PieceType.CHICK]):
+        placements.append(_BLACK_HAND)
+    for _ in range(state.hands[Player.WHITE][PieceType.CHICK]):
+        placements.append(_WHITE_HAND)
+
+    if len(placements) > 2:
+        raise ValueError(f"Found {len(placements)} chick-family pieces, expected at most 2")
+    placements.sort()
+    return tuple(placements)
+
+
+def _pair_board_mask(pair: Tuple[int, ...]) -> int:
+    mask = 0
+    for placement in pair:
+        cell = _placement_cell(placement)
+        if cell is not None:
+            mask |= 1 << cell
+    return mask
+
+
+def _placement_cell(placement: int) -> Optional[int]:
+    if placement < 0:
+        return None
+    return placement % _BOARD_SIZE
+
+
+def _valid_pair(first: int, second: int) -> bool:
+    first_cell = _placement_cell(first)
+    second_cell = _placement_cell(second)
+    return first_cell is None or second_cell is None or first_cell != second_cell
+
+
+@lru_cache(maxsize=_PAIR_TABLE_CACHE_SIZE)
+def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
+    options = [_BLACK_HAND, _WHITE_HAND]
+    for cell in range(_BOARD_SIZE):
+        if occupied_mask & (1 << cell):
+            continue
+        options.append(cell)
+        options.append(_BOARD_SIZE + cell)
+    options.sort()
+
+    rank_map: Dict[Tuple[int, ...], int] = {(): 0}
+    rank = 1
+    for option in options:
+        rank_map[(option,)] = rank
+        rank += 1
+
+    for option in options:
+        if _placement_cell(option) is not None:
+            continue
+        rank_map[(option, option)] = rank
+        rank += 1
+
+    for i, first in enumerate(options):
+        for second in options[i + 1 :]:
+            if not _valid_pair(first, second):
+                continue
+            rank_map[(first, second)] = rank
+            rank += 1
+    return rank_map, rank
+
+
+@lru_cache(maxsize=_PAIR_TABLE_CACHE_SIZE)
+def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
+    options = [_BLACK_HAND, _WHITE_HAND]
+    for cell in range(_BOARD_SIZE):
+        if occupied_mask & (1 << cell):
+            continue
+        options.extend(
+            (
+                _BLACK_CHICK_OFFSET + cell,
+                _WHITE_CHICK_OFFSET + cell,
+                _BLACK_HEN_OFFSET + cell,
+                _WHITE_HEN_OFFSET + cell,
+            )
+        )
+    options.sort()
+
+    rank_map: Dict[Tuple[int, ...], int] = {(): 0}
+    rank = 1
+    for option in options:
+        rank_map[(option,)] = rank
+        rank += 1
+
+    for option in options:
+        if _placement_cell(option) is not None:
+            continue
+        rank_map[(option, option)] = rank
+        rank += 1
+
+    for i, first in enumerate(options):
+        for second in options[i + 1 :]:
+            if not _valid_pair(first, second):
+                continue
+            rank_map[(first, second)] = rank
+            rank += 1
+    return rank_map, rank
