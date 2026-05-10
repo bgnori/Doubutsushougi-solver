@@ -1,0 +1,2 @@
+# Doubutsushougi-solver
+どうぶつしょうぎの解析プログラムをCopilotに生成させる
