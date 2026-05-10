@@ -25,14 +25,12 @@ def solve(state: State, max_depth: int = 8) -> SolveResult:
     memo: Dict[Tuple[int, int], Tuple[int, List[Move]]] = {}
 
     def negamax(cur: State, depth: int) -> Tuple[int, List[Move]]:
+        if cur.is_terminal():
+            return _terminal_value(cur), []
+
         key = (position_key(cur), depth)
         if key in memo:
             return memo[key]
-
-        if cur.is_terminal():
-            result = (_terminal_value(cur), [])
-            memo[key] = result
-            return result
         if depth == 0:
             result = (0, [])
             memo[key] = result

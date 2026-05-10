@@ -12,55 +12,66 @@ class HashTest(unittest.TestCase):
         self.assertEqual(position_key(state), position_key(clone))
 
     def test_position_key_changes_with_board_and_hand_state(self):
-        state = State.from_sfen("l../.../.../.L. b C -")
+        state = State.from_sfen("l../.../.../.L. b CCGGEE -")
         dropped = state.apply_move(Move(to_row=2, to_col=1, drop_piece=PieceType.CHICK))
         self.assertNotEqual(position_key(state), position_key(dropped))
 
-    def test_position_key_includes_turn_and_winner(self):
-        black_to_move = State.from_sfen(".l./.C./.../.L. b - -")
-        white_to_move = State.from_sfen(".l./.C./.../.L. w - -")
+    def test_position_key_includes_turn_but_not_winner(self):
+        black_to_move = State.from_sfen("gle/.c./.C./ELG b - -")
+        white_to_move = State.from_sfen("gle/.c./.C./ELG w - -")
         self.assertNotEqual(position_key(black_to_move), position_key(white_to_move))
 
-        winning = black_to_move.apply_move(Move(from_row=1, from_col=1, to_row=0, to_col=1))
-        same_position_without_winner = State(
-            board=[[cell for cell in row] for row in winning.board],
-            turn=winning.turn,
+        marked_winner = State(
+            board=[[cell for cell in row] for row in black_to_move.board],
+            turn=black_to_move.turn,
             hands={
-                player: dict(winning.hands[player])
-                for player in winning.hands
+                player: dict(black_to_move.hands[player])
+                for player in black_to_move.hands
             },
-            winner=None,
+            winner=Player.BLACK,
         )
-        self.assertNotEqual(position_key(winning), position_key(same_position_without_winner))
+        self.assertEqual(position_key(black_to_move), position_key(marked_winner))
 
     def test_position_key_has_no_lion_prefix_collisions(self):
         keys = defaultdict(list)
-        absent_lion = BOARD_ROWS * BOARD_COLS
         for turn in Player:
-            for winner in (None, Player.BLACK, Player.WHITE):
-                for black_lion in range(absent_lion + 1):
-                    for white_lion in range(absent_lion + 1):
-                        if black_lion != absent_lion and white_lion != absent_lion and black_lion == white_lion:
-                            continue
+            for black_lion in range(BOARD_ROWS * BOARD_COLS):
+                for white_lion in range(BOARD_ROWS * BOARD_COLS):
+                    if black_lion == white_lion:
+                        continue
 
-                        board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
-                        if black_lion != absent_lion:
-                            row, col = divmod(black_lion, BOARD_COLS)
-                            board[row][col] = Piece(Player.BLACK, PieceType.LION)
-                        if white_lion != absent_lion:
-                            row, col = divmod(white_lion, BOARD_COLS)
-                            board[row][col] = Piece(Player.WHITE, PieceType.LION)
+                    board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+                    row, col = divmod(black_lion, BOARD_COLS)
+                    board[row][col] = Piece(Player.BLACK, PieceType.LION)
+                    row, col = divmod(white_lion, BOARD_COLS)
+                    board[row][col] = Piece(Player.WHITE, PieceType.LION)
 
-                        state = State(
-                            board=board,
-                            turn=turn,
-                            hands={Player.BLACK: State.empty_hand(), Player.WHITE: State.empty_hand()},
-                            winner=winner,
-                        )
-                        keys[position_key(state)].append((turn, winner, black_lion, white_lion))
+                    state = State(
+                        board=board,
+                        turn=turn,
+                        hands={
+                            Player.BLACK: {
+                                PieceType.CHICK: 2,
+                                PieceType.GIRAFFE: 2,
+                                PieceType.ELEPHANT: 2,
+                            },
+                            Player.WHITE: State.empty_hand(),
+                        },
+                    )
+                    keys[position_key(state)].append((turn, black_lion, white_lion))
 
         collisions = {key: states for key, states in keys.items() if len(states) > 1}
         self.assertEqual({}, collisions)
+
+    def test_position_key_rejects_material_incomplete_states(self):
+        with self.assertRaises(ValueError):
+            position_key(State.from_sfen("l../.../.../.L. b C -"))
+
+        with self.assertRaises(ValueError):
+            position_key(State.from_sfen(".../.../.../.L. b CCGGEE -"))
+
+        with self.assertRaises(ValueError):
+            position_key(State.from_sfen("ll./.../.../.L. b CCGGEE -"))
 
     def test_state_from_key_round_trips_representative_keys(self):
         keys = [
