@@ -1,7 +1,8 @@
 import unittest
+from collections import defaultdict
 
-from src.doubutsu.game import Move, PieceType, State
-from src.doubutsu.hash import position_key
+from src.doubutsu.game import BOARD_COLS, BOARD_ROWS, Move, Piece, PieceType, Player, State
+from src.doubutsu.hash import position_key, position_key_space_size, state_from_key
 
 
 class HashTest(unittest.TestCase):
@@ -31,6 +32,47 @@ class HashTest(unittest.TestCase):
             winner=None,
         )
         self.assertNotEqual(position_key(winning), position_key(same_position_without_winner))
+
+    def test_position_key_has_no_lion_prefix_collisions(self):
+        keys = defaultdict(list)
+        absent_lion = BOARD_ROWS * BOARD_COLS
+        for turn in Player:
+            for winner in (None, Player.BLACK, Player.WHITE):
+                for black_lion in range(absent_lion + 1):
+                    for white_lion in range(absent_lion + 1):
+                        if black_lion != absent_lion and white_lion != absent_lion and black_lion == white_lion:
+                            continue
+
+                        board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+                        if black_lion != absent_lion:
+                            row, col = divmod(black_lion, BOARD_COLS)
+                            board[row][col] = Piece(Player.BLACK, PieceType.LION)
+                        if white_lion != absent_lion:
+                            row, col = divmod(white_lion, BOARD_COLS)
+                            board[row][col] = Piece(Player.WHITE, PieceType.LION)
+
+                        state = State(
+                            board=board,
+                            turn=turn,
+                            hands={Player.BLACK: State.empty_hand(), Player.WHITE: State.empty_hand()},
+                            winner=winner,
+                        )
+                        keys[position_key(state)].append((turn, winner, black_lion, white_lion))
+
+        collisions = {key: states for key, states in keys.items() if len(states) > 1}
+        self.assertEqual({}, collisions)
+
+    def test_state_from_key_round_trips_representative_keys(self):
+        keys = [
+            0,
+            1,
+            position_key_space_size() // 2,
+            position_key_space_size() - 1,
+            position_key(State.initial()),
+        ]
+        for key in keys:
+            with self.subTest(key=key):
+                self.assertEqual(key, position_key(state_from_key(key)))
 
 
 if __name__ == "__main__":
