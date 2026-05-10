@@ -73,6 +73,18 @@ class HashTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             position_key(State.from_sfen("ll./.../.../.L. b CCGGEE -"))
 
+    def test_chicks_and_hens_are_one_two_piece_family(self):
+        state = State.from_sfen("lH./.../.../.Lh b GGEE -")
+        key = position_key(state)
+        restored = state_from_key(key)
+
+        self.assertEqual(key, position_key(restored))
+        self.assertEqual(state.to_sfen(), restored.to_sfen())
+
+    def test_hens_cannot_be_in_hand(self):
+        with self.assertRaises(ValueError):
+            State.from_sfen("l../.../.../.L. b HCCGGEE -")
+
     def test_state_from_key_round_trips_representative_keys(self):
         keys = [
             0,
