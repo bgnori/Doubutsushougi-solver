@@ -88,7 +88,8 @@ def _lion_positions(state: State) -> Tuple[Optional[int], Optional[int]]:
 
 
 def _rank_second_lion(first_lion_code: int, second_lion_code: int) -> Tuple[int, int]:
-    total = (_ABSENT_LION + 1) - (0 if first_lion_code == _ABSENT_LION else 1)
+    first_lion_occupies_square = first_lion_code != _ABSENT_LION
+    total = (_ABSENT_LION + 1) - (1 if first_lion_occupies_square else 0)
     rank = 0
     for candidate in range(_ABSENT_LION + 1):
         if candidate != _ABSENT_LION and candidate == first_lion_code:

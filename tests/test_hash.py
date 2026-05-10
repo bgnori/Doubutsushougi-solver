@@ -21,8 +21,15 @@ class HashTest(unittest.TestCase):
         self.assertNotEqual(position_key(black_to_move), position_key(white_to_move))
 
         winning = black_to_move.apply_move(Move(from_row=1, from_col=1, to_row=0, to_col=1))
-        same_position_without_winner = winning.clone()
-        same_position_without_winner.winner = None
+        same_position_without_winner = State(
+            board=[[cell for cell in row] for row in winning.board],
+            turn=winning.turn,
+            hands={
+                player: dict(winning.hands[player])
+                for player in winning.hands
+            },
+            winner=None,
+        )
         self.assertNotEqual(position_key(winning), position_key(same_position_without_winner))
 
 
