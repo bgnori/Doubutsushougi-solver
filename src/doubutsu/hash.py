@@ -8,6 +8,11 @@ from .game import BOARD_COLS, BOARD_ROWS, PieceType, Player, State
 _NONE_WINNER = 0
 _BLACK_WINNER = 1
 _WHITE_WINNER = 2
+_WINNER_CODES = {
+    None: _NONE_WINNER,
+    Player.BLACK: _BLACK_WINNER,
+    Player.WHITE: _WHITE_WINNER,
+}
 
 _BLACK_HAND = -2
 _WHITE_HAND = -1
@@ -61,11 +66,7 @@ def position_key(state: State) -> int:
 
 
 def _winner_code(winner: Optional[Player]) -> int:
-    if winner is None:
-        return _NONE_WINNER
-    if winner == Player.BLACK:
-        return _BLACK_WINNER
-    return _WHITE_WINNER
+    return _WINNER_CODES[winner]
 
 
 def _cell_index(row: int, col: int) -> int:
@@ -189,7 +190,7 @@ def _valid_pair(first: int, second: int) -> bool:
     return first_cell is None or second_cell is None or first_cell != second_cell
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=1 << _BOARD_SIZE)
 def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(_BOARD_SIZE):
@@ -220,7 +221,7 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], 
     return rank_map, rank
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=1 << _BOARD_SIZE)
 def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(_BOARD_SIZE):
