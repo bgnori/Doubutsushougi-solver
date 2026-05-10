@@ -96,7 +96,7 @@ def _rank_second_lion(first_lion_code: int, second_lion_code: int) -> Tuple[int,
         if candidate == second_lion_code:
             return rank, total
         rank += 1
-    raise ValueError("Invalid lion placement")
+    raise ValueError(f"Invalid lion placement: black={first_lion_code}, white={second_lion_code}")
 
 
 def _encode_non_promoted_pair(state: State, piece_type: PieceType, occupied_mask: int) -> Tuple[int, int, int]:
@@ -117,7 +117,7 @@ def _encode_chick_pair(state: State, occupied_mask: int) -> Tuple[int, int, int]
     return rank, total, _pair_board_mask(placements)
 
 
-def _non_promoted_pair(state: State, piece_type: PieceType) -> Tuple[int, int]:
+def _non_promoted_pair(state: State, piece_type: PieceType) -> Tuple[int, ...]:
     placements: List[int] = []
 
     for row in range(BOARD_ROWS):
@@ -133,13 +133,13 @@ def _non_promoted_pair(state: State, piece_type: PieceType) -> Tuple[int, int]:
     for _ in range(state.hands[Player.WHITE][piece_type]):
         placements.append(_WHITE_HAND)
 
-    if len(placements) != 2:
-        raise ValueError(f"Expected exactly two {piece_type.value} pieces")
+    if len(placements) > 2:
+        raise ValueError(f"Found {len(placements)} {piece_type.value} pieces, expected at most 2")
     placements.sort()
-    return placements[0], placements[1]
+    return tuple(placements)
 
 
-def _chick_pair(state: State) -> Tuple[int, int]:
+def _chick_pair(state: State) -> Tuple[int, ...]:
     placements: List[int] = []
 
     for row in range(BOARD_ROWS):
@@ -160,13 +160,13 @@ def _chick_pair(state: State) -> Tuple[int, int]:
     for _ in range(state.hands[Player.WHITE][PieceType.CHICK]):
         placements.append(_WHITE_HAND)
 
-    if len(placements) != 2:
-        raise ValueError("Expected exactly two chick-family pieces")
+    if len(placements) > 2:
+        raise ValueError(f"Found {len(placements)} chick-family pieces, expected at most 2")
     placements.sort()
-    return placements[0], placements[1]
+    return tuple(placements)
 
 
-def _pair_board_mask(pair: Tuple[int, int]) -> int:
+def _pair_board_mask(pair: Tuple[int, ...]) -> int:
     mask = 0
     for placement in pair:
         cell = _placement_cell(placement)
@@ -188,7 +188,7 @@ def _valid_pair(first: int, second: int) -> bool:
 
 
 @lru_cache(maxsize=None)
-def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, int], int], int]:
+def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(BOARD_ROWS * BOARD_COLS):
         if occupied_mask & (1 << cell):
@@ -197,8 +197,12 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, int], 
         options.append(BOARD_ROWS * BOARD_COLS + cell)
     options.sort()
 
-    rank_map: Dict[Tuple[int, int], int] = {}
-    rank = 0
+    rank_map: Dict[Tuple[int, ...], int] = {(): 0}
+    rank = 1
+    for option in options:
+        rank_map[(option,)] = rank
+        rank += 1
+
     for i, first in enumerate(options):
         for second in options[i:]:
             if not _valid_pair(first, second):
@@ -209,7 +213,7 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, int], 
 
 
 @lru_cache(maxsize=None)
-def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, int], int], int]:
+def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(BOARD_ROWS * BOARD_COLS):
         if occupied_mask & (1 << cell):
@@ -224,8 +228,12 @@ def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, int], int], i
         )
     options.sort()
 
-    rank_map: Dict[Tuple[int, int], int] = {}
-    rank = 0
+    rank_map: Dict[Tuple[int, ...], int] = {(): 0}
+    rank = 1
+    for option in options:
+        rank_map[(option,)] = rank
+        rank += 1
+
     for i, first in enumerate(options):
         for second in options[i:]:
             if not _valid_pair(first, second):

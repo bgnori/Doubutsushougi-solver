@@ -21,8 +21,9 @@ class HashTest(unittest.TestCase):
         self.assertNotEqual(position_key(black_to_move), position_key(white_to_move))
 
         winning = black_to_move.apply_move(Move(from_row=1, from_col=1, to_row=0, to_col=1))
-        recreated = State.from_sfen(winning.to_sfen())
-        self.assertNotEqual(position_key(winning), position_key(recreated))
+        same_position_without_winner = winning.clone()
+        same_position_without_winner.winner = None
+        self.assertNotEqual(position_key(winning), position_key(same_position_without_winner))
 
 
 if __name__ == "__main__":
