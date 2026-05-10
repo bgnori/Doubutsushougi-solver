@@ -66,6 +66,9 @@ def position_key(state: State) -> int:
     key = key * chick_total + chick_rank
     return key
 
+# Alias for retrograde analysis
+position_to_index = position_key
+
 
 def _winner_code(winner: Optional[Player]) -> int:
     return _WINNER_CODES[winner]
