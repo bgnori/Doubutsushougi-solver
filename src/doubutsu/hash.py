@@ -17,7 +17,8 @@ _WHITE_CHICK_OFFSET = 12
 _BLACK_HEN_OFFSET = 24
 _WHITE_HEN_OFFSET = 36
 
-_ABSENT_LION = BOARD_ROWS * BOARD_COLS
+_BOARD_SIZE = BOARD_ROWS * BOARD_COLS
+_ABSENT_LION = _BOARD_SIZE
 
 
 def position_key(state: State) -> int:
@@ -127,7 +128,7 @@ def _non_promoted_pair(state: State, piece_type: PieceType) -> Tuple[int, ...]:
             if piece is None or piece.type != piece_type:
                 continue
             index = _cell_index(row, col)
-            placements.append(index if piece.owner == Player.BLACK else BOARD_ROWS * BOARD_COLS + index)
+            placements.append(index if piece.owner == Player.BLACK else _BOARD_SIZE + index)
 
     for _ in range(state.hands[Player.BLACK][piece_type]):
         placements.append(_BLACK_HAND)
@@ -179,7 +180,7 @@ def _pair_board_mask(pair: Tuple[int, ...]) -> int:
 def _placement_cell(placement: int) -> Optional[int]:
     if placement < 0:
         return None
-    return placement % (BOARD_ROWS * BOARD_COLS)
+    return placement % _BOARD_SIZE
 
 
 def _valid_pair(first: int, second: int) -> bool:
@@ -191,11 +192,11 @@ def _valid_pair(first: int, second: int) -> bool:
 @lru_cache(maxsize=None)
 def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
-    for cell in range(BOARD_ROWS * BOARD_COLS):
+    for cell in range(_BOARD_SIZE):
         if occupied_mask & (1 << cell):
             continue
         options.append(cell)
-        options.append(BOARD_ROWS * BOARD_COLS + cell)
+        options.append(_BOARD_SIZE + cell)
     options.sort()
 
     rank_map: Dict[Tuple[int, ...], int] = {(): 0}
@@ -204,8 +205,14 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], 
         rank_map[(option,)] = rank
         rank += 1
 
+    for option in options:
+        if _placement_cell(option) is not None:
+            continue
+        rank_map[(option, option)] = rank
+        rank += 1
+
     for i, first in enumerate(options):
-        for second in options[i:]:
+        for second in options[i + 1 :]:
             if not _valid_pair(first, second):
                 continue
             rank_map[(first, second)] = rank
@@ -216,7 +223,7 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], 
 @lru_cache(maxsize=None)
 def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
-    for cell in range(BOARD_ROWS * BOARD_COLS):
+    for cell in range(_BOARD_SIZE):
         if occupied_mask & (1 << cell):
             continue
         options.extend(
@@ -235,8 +242,14 @@ def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], i
         rank_map[(option,)] = rank
         rank += 1
 
+    for option in options:
+        if _placement_cell(option) is not None:
+            continue
+        rank_map[(option, option)] = rank
+        rank += 1
+
     for i, first in enumerate(options):
-        for second in options[i:]:
+        for second in options[i + 1 :]:
             if not _valid_pair(first, second):
                 continue
             rank_map[(first, second)] = rank
