@@ -24,7 +24,7 @@ def position_key(state: State) -> int:
     """Return a dense, collision-free index for a material-complete position.
 
     The indexed space is:
-    * side to move,
+        * canonical black-to-move orientation,
     * one black lion and one white lion on distinct board squares,
     * two giraffes, two elephants, and two chick-family pieces distributed
       between board and hands,
@@ -34,6 +34,8 @@ def position_key(state: State) -> int:
     try-state are deliberately not filtered here; retrograde analysis classifies
     those states later. ``State.winner`` is analysis metadata and is ignored.
     """
+    state = _canonical_state(state)
+
     black_lion, white_lion = _lion_positions(state)
     lion_rank = _rank_lions(black_lion, white_lion)
     available = _available_cells(black_lion, white_lion)
@@ -92,12 +94,7 @@ def position_key(state: State) -> int:
     if inner >= block_size:
         raise ValueError("Internal hash rank exceeded hand-count block size")
 
-    return (
-        _turn_code(state.turn) * _states_per_turn()
-        + lion_rank * _states_per_lion_pair()
-        + hand_offset
-        + inner
-    )
+    return lion_rank * _states_per_lion_pair() + hand_offset + inner
 
 
 # Alias for retrograde analysis.
@@ -107,16 +104,16 @@ position_to_index = position_key
 @lru_cache(maxsize=1)
 def position_key_space_size() -> int:
     """Return the dense index-space size of ``position_key``."""
-    return 2 * _states_per_turn()
+    return _states_per_turn()
 
 
 def state_from_key(key: int) -> State:
-    """Reconstruct the unique material-complete State represented by ``key``."""
+    """Reconstruct the canonical black-to-move State represented by ``key``."""
     if key < 0 or key >= position_key_space_size():
         raise ValueError(f"Key out of range: {key}")
 
-    turn_code, remainder = divmod(key, _states_per_turn())
-    turn = Player.BLACK if turn_code == 0 else Player.WHITE
+    remainder = key
+    turn = Player.BLACK
 
     lion_rank, remainder = divmod(remainder, _states_per_lion_pair())
     black_lion, white_lion = _unrank_lions(lion_rank)
@@ -167,12 +164,33 @@ def state_from_key(key: int) -> State:
 
 
 # ---------------------------------------------------------------------------
-# Space-size blocks
+# Canonicalization and space-size blocks
 # ---------------------------------------------------------------------------
 
 
-def _turn_code(turn: Player) -> int:
-    return 0 if turn == Player.BLACK else 1
+def _canonical_state(state: State) -> State:
+    if state.turn == Player.BLACK:
+        return state
+
+    board: List[List[Optional[Piece]]] = [[None] * BOARD_COLS for _ in range(BOARD_ROWS)]
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            piece = state.board[row][col]
+            if piece is None:
+                continue
+            new_row = BOARD_ROWS - 1 - row
+            new_col = BOARD_COLS - 1 - col
+            board[new_row][new_col] = Piece(piece.owner.opponent, piece.type)
+
+    return State(
+        board=board,
+        turn=Player.BLACK,
+        hands={
+            Player.BLACK: dict(state.hands[Player.WHITE]),
+            Player.WHITE: dict(state.hands[Player.BLACK]),
+        },
+        winner=None if state.winner is None else state.winner.opponent,
+    )
 
 
 @lru_cache(maxsize=1)

@@ -7,6 +7,24 @@ from src.doubutsu.hash import position_key, position_key_space_size, state_from_
 
 
 class HashTest(unittest.TestCase):
+    def _rotate_swap(self, state: State) -> State:
+        board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+        for row in range(BOARD_ROWS):
+            for col in range(BOARD_COLS):
+                piece = state.board[row][col]
+                if piece is None:
+                    continue
+                board[BOARD_ROWS - 1 - row][BOARD_COLS - 1 - col] = Piece(piece.owner.opponent, piece.type)
+        return State(
+            board=board,
+            turn=state.turn.opponent,
+            hands={
+                Player.BLACK: dict(state.hands[Player.WHITE]),
+                Player.WHITE: dict(state.hands[Player.BLACK]),
+            },
+            winner=None if state.winner is None else state.winner.opponent,
+        )
+
     def test_position_key_is_stable_for_equivalent_states(self):
         state = State.from_sfen("gle/.c./.C./ELG b - -")
         clone = State.from_sfen(state.to_sfen())
@@ -17,10 +35,13 @@ class HashTest(unittest.TestCase):
         dropped = state.apply_move(Move(to_row=2, to_col=1, drop_piece=PieceType.CHICK))
         self.assertNotEqual(position_key(state), position_key(dropped))
 
-    def test_position_key_includes_turn_but_not_winner(self):
+    def test_position_key_normalizes_turn_and_ignores_winner(self):
         black_to_move = State.from_sfen("gle/.c./.C./ELG b - -")
         white_to_move = State.from_sfen("gle/.c./.C./ELG w - -")
-        self.assertNotEqual(position_key(black_to_move), position_key(white_to_move))
+        self.assertEqual(position_key(black_to_move), position_key(white_to_move))
+
+        asymmetric = State.from_sfen("lG./..E/C../.L. b CGE -")
+        self.assertEqual(position_key(asymmetric), position_key(self._rotate_swap(asymmetric)))
 
         marked_winner = State(
             board=[[cell for cell in row] for row in black_to_move.board],
@@ -35,31 +56,30 @@ class HashTest(unittest.TestCase):
 
     def test_position_key_has_no_lion_prefix_collisions(self):
         keys = defaultdict(list)
-        for turn in Player:
-            for black_lion in range(BOARD_ROWS * BOARD_COLS):
-                for white_lion in range(BOARD_ROWS * BOARD_COLS):
-                    if black_lion == white_lion:
-                        continue
+        for black_lion in range(BOARD_ROWS * BOARD_COLS):
+            for white_lion in range(BOARD_ROWS * BOARD_COLS):
+                if black_lion == white_lion:
+                    continue
 
-                    board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
-                    row, col = divmod(black_lion, BOARD_COLS)
-                    board[row][col] = Piece(Player.BLACK, PieceType.LION)
-                    row, col = divmod(white_lion, BOARD_COLS)
-                    board[row][col] = Piece(Player.WHITE, PieceType.LION)
+                board = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+                row, col = divmod(black_lion, BOARD_COLS)
+                board[row][col] = Piece(Player.BLACK, PieceType.LION)
+                row, col = divmod(white_lion, BOARD_COLS)
+                board[row][col] = Piece(Player.WHITE, PieceType.LION)
 
-                    state = State(
-                        board=board,
-                        turn=turn,
-                        hands={
-                            Player.BLACK: {
-                                PieceType.CHICK: 2,
-                                PieceType.GIRAFFE: 2,
-                                PieceType.ELEPHANT: 2,
-                            },
-                            Player.WHITE: State.empty_hand(),
+                state = State(
+                    board=board,
+                    turn=Player.BLACK,
+                    hands={
+                        Player.BLACK: {
+                            PieceType.CHICK: 2,
+                            PieceType.GIRAFFE: 2,
+                            PieceType.ELEPHANT: 2,
                         },
-                    )
-                    keys[position_key(state)].append((turn, black_lion, white_lion))
+                        Player.WHITE: State.empty_hand(),
+                    },
+                )
+                keys[position_key(state)].append((black_lion, white_lion))
 
         collisions = {key: states for key, states in keys.items() if len(states) > 1}
         self.assertEqual({}, collisions)
@@ -97,6 +117,7 @@ class HashTest(unittest.TestCase):
         for key in keys:
             with self.subTest(key=key):
                 self.assertEqual(key, position_key(state_from_key(key)))
+                self.assertEqual(Player.BLACK, state_from_key(key).turn)
 
     def test_position_key_space_size_matches_hand_count_formula(self):
         per_lion = 0
@@ -119,7 +140,7 @@ class HashTest(unittest.TestCase):
                     )
 
         self.assertEqual(11_878_227, per_lion)
-        self.assertEqual(2 * 12 * 11 * per_lion, position_key_space_size())
+        self.assertEqual(12 * 11 * per_lion, position_key_space_size())
 
 
 if __name__ == "__main__":
