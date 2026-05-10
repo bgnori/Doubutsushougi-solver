@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from .game import Move, Player, State
+from .hash import position_key
 
 
 @dataclass
@@ -21,10 +22,10 @@ def _terminal_value(state: State) -> int:
 
 
 def solve(state: State, max_depth: int = 8) -> SolveResult:
-    memo: Dict[Tuple[str, int], Tuple[int, List[Move]]] = {}
+    memo: Dict[Tuple[int, int], Tuple[int, List[Move]]] = {}
 
     def negamax(cur: State, depth: int) -> Tuple[int, List[Move]]:
-        key = (cur.to_sfen(), depth)
+        key = (position_key(cur), depth)
         if key in memo:
             return memo[key]
 
