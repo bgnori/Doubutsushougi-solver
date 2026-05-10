@@ -24,6 +24,7 @@ _WHITE_HEN_OFFSET = 36
 
 _BOARD_SIZE = BOARD_ROWS * BOARD_COLS
 _ABSENT_LION = _BOARD_SIZE
+_PAIR_TABLE_CACHE_SIZE = 512
 
 
 def position_key(state: State) -> int:
@@ -190,7 +191,7 @@ def _valid_pair(first: int, second: int) -> bool:
     return first_cell is None or second_cell is None or first_cell != second_cell
 
 
-@lru_cache(maxsize=1 << _BOARD_SIZE)
+@lru_cache(maxsize=_PAIR_TABLE_CACHE_SIZE)
 def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(_BOARD_SIZE):
@@ -221,7 +222,7 @@ def _non_promoted_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], 
     return rank_map, rank
 
 
-@lru_cache(maxsize=1 << _BOARD_SIZE)
+@lru_cache(maxsize=_PAIR_TABLE_CACHE_SIZE)
 def _chick_pair_table(occupied_mask: int) -> Tuple[Dict[Tuple[int, ...], int], int]:
     options = [_BLACK_HAND, _WHITE_HAND]
     for cell in range(_BOARD_SIZE):
