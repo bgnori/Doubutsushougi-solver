@@ -29,6 +29,13 @@ class GameTest(unittest.TestCase):
         nxt = state.apply_move(move)
         self.assertEqual(nxt.winner, Player.BLACK)
 
+    def test_is_legal_move_rejects_invalid_cases(self):
+        state = State.from_sfen("l../.C./.../.L. b - -")
+        self.assertFalse(state.is_legal_move(Move(from_row=1, from_col=1, to_row=-1, to_col=1)))
+        self.assertFalse(state.is_legal_move(Move(from_row=0, from_col=0, to_row=1, to_col=0)))
+        self.assertFalse(state.is_legal_move(Move(from_row=1, from_col=1, to_row=1, to_col=2)))
+        self.assertFalse(state.is_legal_move(Move(to_row=0, to_col=0, drop_piece=PieceType.CHICK)))
+
 
 if __name__ == "__main__":
     unittest.main()

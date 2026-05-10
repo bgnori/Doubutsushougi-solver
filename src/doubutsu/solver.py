@@ -69,7 +69,7 @@ def solve(state: State, max_depth: int = 8) -> SolveResult:
     )
 
 
-def value_to_text(value: int, turn: Player) -> str:
+def evaluation_to_text(value: int, turn: Player) -> str:
     if value > 0:
         return f"{turn.value}:win"
     if value < 0:
